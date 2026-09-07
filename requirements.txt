@@ -1,0 +1,16 @@
+# Core RAG & LLM
+langchain>=1.2.0
+langchain-core>=1.2.0
+langchain-openai>=1.1.0
+langchain-huggingface>=0.1.0
+
+# Document Ingestion & Vector Store
+pypdf>=4.0.0
+pymupdf>=1.24.0
+sentence-transformers>=3.0.0
+faiss-cpu>=1.8.0
+
+# UI & Observability
+streamlit>=1.38.0
+langsmith>=0.7.0
+python-dotenv>=1.0.0

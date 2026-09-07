@@ -1,0 +1,26 @@
+# Environment variables (CRITICAL: Contains OpenAI & LangSmith API Keys)
+.env
+
+# Vector Database (Locally generated FAISS indexes)
+faiss_index/
+
+# Data files (Uploaded PDFs)
+*.pdf
+data/
+
+# Python / Virtual Environment
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Streamlit config (if you use local secrets later)
+.streamlit/
+
+# OS / Editor Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
