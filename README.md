@@ -57,3 +57,94 @@ Grounded Answer
                                       ▼
                               Final LLM Answer
 ```
+##🏗️ Application Architecture
+```
+                     ┌──────────────────────┐
+                     │      User Query      │
+                     └──────────┬───────────┘
+                                │
+                                ▼
+                     ┌──────────────────────┐
+                     │   FAISS Retriever    │
+                     │    Top 5 Chunks      │
+                     └──────────┬───────────┘
+                                │
+                                ▼
+                     ┌──────────────────────┐
+                     │    Query Grader LLM  │
+                     └──────────┬───────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+       OUT_OF_SCOPE          PDF_YES         WEB_SEARCH
+              │                 │                 │
+              ▼                 ▼                 ▼
+        Scope Message      PDF Context       Web Results
+                                │                 │
+                                └────────┬────────┘
+                                         │
+                                         ▼
+                              ┌─────────────────────┐
+                              │ Conversation History│
+                              └──────────┬──────────┘
+                                         │
+                                         ▼
+                              ┌─────────────────────┐
+                              │     RAG Prompt      │
+                              └──────────┬──────────┘
+                                         │
+                                         ▼
+                              ┌─────────────────────┐
+                              │     ChatOpenAI      │
+                              └──────────┬──────────┘
+                                         │
+                                         ▼
+                              ┌─────────────────────┐
+                              │    Final Answer     │
+                              └─────────────────────┘
+```
+
+##🧠 RAG Pipeline
+
+The document processing pipeline works as follows:
+```
+Government Scheme PDFs
+          ↓
+     PyPDFLoader
+          ↓
+     Text Extraction
+          ↓
+RecursiveCharacterTextSplitter
+          ↓
+    Document Chunks
+          ↓
+Hugging Face Embeddings
+          ↓
+     FAISS Vector Store
+          ↓
+    Similarity Search
+          ↓
+   Top 5 Relevant Chunks
+          ↓
+      RAG Prompt
+          ↓
+       ChatOpenAI
+          ↓
+     Final Answer
+
+```
+##🛠️ Technology Stack
+| Technology                         | Purpose                                     |
+| ---------------------------------- | ------------------------------------------- |
+| **Python**                         | Application development                     |
+| **Streamlit**                      | Web application and chat interface          |
+| **LangChain**                      | RAG and LLM orchestration                   |
+| **OpenAI**                         | LLM for query grading and answer generation |
+| **Hugging Face**                   | Text embeddings                             |
+| **FAISS**                          | Vector similarity search                    |
+| **PyPDFLoader**                    | PDF document loading                        |
+| **RecursiveCharacterTextSplitter** | Document chunking                           |
+| **DuckDuckGo Search**              | Web search fallback                         |
+| **LangSmith**                      | LLM tracing and observability               |
+| **python-dotenv**                  | Environment variable management             |
