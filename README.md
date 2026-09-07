@@ -36,3 +36,24 @@ OpenAI LLM
       ↓
 Grounded Answer
 ```
+## 🧠 Intelligent Query Routing
+
+### An LLM-based grader determines how each question should be handled.
+```
+                         User Question
+                              │
+                              ▼
+                       Query Grader LLM
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        OUT_OF_SCOPE       PDF_YES        WEB_SEARCH
+              │               │               │
+              ▼               ▼               ▼
+        Reject Query     PDF Retrieval    Web Search
+                              │               │
+                              └───────┬───────┘
+                                      │
+                                      ▼
+                              Final LLM Answer
+```
