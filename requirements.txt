@@ -1,16 +1,23 @@
-# Core RAG & LLM
-langchain>=1.2.0
-langchain-core>=1.2.0
-langchain-openai>=1.1.0
-langchain-huggingface>=0.1.0
+# Web Framework & Environment
+streamlit
+python-dotenv
 
-# Document Ingestion & Vector Store
-pypdf>=4.0.0
-pymupdf>=1.24.0
-sentence-transformers>=3.0.0
-faiss-cpu>=1.8.0
+# LangChain Ecosystem
+langchain
+langchain-core
+langchain-openai
+langchain-community
+langchain-huggingface
+langchain-text-splitters
 
-# UI & Observability
-streamlit>=1.38.0
-langsmith>=0.7.0
-python-dotenv>=1.0.0
+# Document Processing & Vector Store
+pypdf
+faiss-cpu
+sentence-transformers
+
+# Web Search Tool (Pinned version to prevent the import error)
+duckduckgo-search==5.3.1
+
+# Enterprise Guardrails & Evaluation
+nemoguardrails
+deepeval
