@@ -1,0 +1,13 @@
+define user ask off topic
+  "who won the cricket match?"
+  "how do I bake a cake?"
+  "write a poem about space"
+  "what is the capital of France?"
+  "give me stock market advice"
+
+define bot refuse to answer off topic
+  "🛑 Out of Scope: I am a specialized Farmer Scheme Assistant. I can only answer questions related to agriculture, farming, weather, and government schemes."
+
+define flow off topic
+  user ask off topic
+  bot refuse to answer off topic

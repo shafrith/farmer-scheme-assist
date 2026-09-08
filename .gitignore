@@ -1,9 +1,6 @@
 # Environment variables (CRITICAL: Contains OpenAI & LangSmith API Keys)
 .env
 
-# Vector Database (Locally generated FAISS indexes)
-faiss_index/
-
 # Data files (Uploaded PDFs)
 *.pdf
 data/

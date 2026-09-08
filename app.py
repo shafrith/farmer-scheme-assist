@@ -1,198 +1,241 @@
 import os
 import tempfile
+import json
 import streamlit as st
 from dotenv import load_dotenv
-from operator import itemgetter
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.tools import DuckDuckGoSearchResults
 
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+# --- NEMO GUARDRAILS IMPORTS ---
+from nemoguardrails import RailsConfig, LLMRails
+
+# --- LANGSMITH OBSERVABILITY TRIGGER ---
 load_dotenv()
 
 st.set_page_config(page_title="Farmer Scheme Assist", page_icon="🌾", layout="wide")
 
-# --- INITIALIZE MEMORY ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-# Renamed from 'vector_store' to 'doc_memory' for easier understanding
-if "doc_memory" not in st.session_state: 
-    st.session_state.doc_memory = None
-if "scheme_list" not in st.session_state:
-    st.session_state.scheme_list = []
+# --- INITIALIZE NEMO GUARDRAILS ---
+@st.cache_resource
+def load_guardrails():
+    config = RailsConfig.from_path("./config")
+    return LLMRails(config)
 
-# --- SIDEBAR: MULTI-FILE UPLOAD (User-Friendly UI) ---
+guardrails = load_guardrails()
+
+# --- INITIALIZE MEMORY & WIDGET STATES ---
+if "chat_memory" not in st.session_state:
+    st.session_state.chat_memory = InMemoryChatMessageHistory()
+
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
+if "upload_success" not in st.session_state:
+    st.session_state.upload_success = None
+
+# Auto-load existing FAISS database if available
+if "doc_memory" not in st.session_state: 
+    if os.path.exists("faiss_index"):
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        st.session_state.doc_memory = FAISS.load_local(
+            "faiss_index", embeddings, allow_dangerous_deserialization=True
+        )
+        if os.path.exists(os.path.join("faiss_index", "schemes.json")):
+            with open(os.path.join("faiss_index", "schemes.json"), "r") as f:
+                st.session_state.scheme_list = json.load(f)
+        else:
+            st.session_state.scheme_list = ["Previously uploaded schemes"]
+    else:
+        st.session_state.doc_memory = None
+        st.session_state.scheme_list = []
+
+# --- SIDEBAR: DOCUMENT INGESTION & MANAGEMENT ---
 with st.sidebar:
-    st.header("📂 Upload Scheme Documents")
-    st.caption("Add your PDF files here so I can read them.")
+    st.header("📂 Scheme Documents")
     
-    uploaded_files = st.file_uploader("Choose PDF files", type=["pdf"], accept_multiple_files=True)
-    
-    if st.button("Read Documents"):
+    if st.session_state.doc_memory is not None:
+        st.success("✅ Database loaded and ready!")
+        with st.expander("Currently Loaded Schemes"):
+            for scheme in st.session_state.scheme_list:
+                st.write(f"- {scheme}")
+    else:
+        st.caption("No database found. Please upload a PDF to begin.")
+        
+    st.divider()
+
+    # Display persistent upload success message if set
+    if st.session_state.upload_success:
+        st.success(st.session_state.upload_success)
+        st.session_state.upload_success = None  # Clear after displaying once
+
+    uploaded_files = st.file_uploader(
+        "Add new PDF files", 
+        type=["pdf"], 
+        accept_multiple_files=True,
+        key=f"pdf_uploader_{st.session_state.uploader_key}"
+    )
+
+    if st.button("Process & Add Documents"):
         if uploaded_files:
-            with st.spinner(f"Reading {len(uploaded_files)} documents. This might take a moment..."):
+            with st.spinner("Processing documents..."):
                 all_chunks = []
                 uploaded_names = []
                 
                 for uploaded_file in uploaded_files:
                     uploaded_names.append(uploaded_file.name.replace(".pdf", ""))
-                    
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                         tmp_file.write(uploaded_file.getvalue())
                         tmp_file_path = tmp_file.name
-                    
-                    # --- 1. Document loader: Reads the raw text out of the uploaded PDF file ---
+                        
                     loader = PyPDFLoader(tmp_file_path)
                     docs = loader.load()
                     
-                    # --- 2. Text splitter: Breaks the long document down into smaller, manageable paragraphs ---
                     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
                     chunks = text_splitter.split_documents(docs)
                     
                     all_chunks.extend(chunks)
                     os.remove(tmp_file_path)
                 
-                # --- 3. Embedding: Converts the text paragraphs into numbers so the AI can understand meaning ---
                 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                 
-                # --- 4. Vector store: Saves those numbers into a highly searchable, temporary database (FAISS) ---
-                st.session_state.doc_memory = FAISS.from_documents(all_chunks, embeddings)
+                # Append to existing store or create new
+                if st.session_state.doc_memory is None:
+                    st.session_state.doc_memory = FAISS.from_documents(all_chunks, embeddings)
+                    st.session_state.scheme_list = uploaded_names
+                else:
+                    st.session_state.doc_memory.add_documents(all_chunks)
+                    for name in uploaded_names:
+                        if name not in st.session_state.scheme_list:
+                            st.session_state.scheme_list.append(name)
                 
-                st.session_state.scheme_list = uploaded_names
+                # Persist FAISS index and scheme metadata locally
+                st.session_state.doc_memory.save_local("faiss_index")
+                with open(os.path.join("faiss_index", "schemes.json"), "w") as f:
+                    json.dump(st.session_state.scheme_list, f)
                 
-                st.success(f"✅ Success! I have finished reading {len(uploaded_files)} documents.")
+                # Set success message & bump widget key to clear the file uploader box
+                st.session_state.upload_success = f"✅ Successfully added {len(uploaded_files)} document(s)!"
+                st.session_state.uploader_key += 1
+                st.rerun()
         else:
-            st.warning("Please upload at least one PDF file first.")
-            
+            st.warning("Please select a PDF file first.")
+                
     st.divider()
     if st.button("Clear Chat History"):
-        st.session_state.messages = []
+        st.session_state.chat_memory.clear()
         st.rerun()
 
 # --- MAIN UI: CHAT INTERFACE ---
 st.title("🌾 Farmer Scheme Assist")
-st.markdown("Hello! I am here to help you understand government agricultural schemes. Ask me anything about farming benefits.")
+st.markdown("Hello! Ask me anything about farming schemes. I will check my database or search the web!")
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+for msg in st.session_state.chat_memory.messages:
+    role = "user" if msg.type == "human" else "assistant"
+    with st.chat_message(role):
+        st.write(msg.content)
 
 if prompt := st.chat_input("E.g., What are the benefits of PM-KISAN?"):
-    
-    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.write(prompt)
 
     if st.session_state.doc_memory is None:
         with st.chat_message("assistant"):
-            st.warning("⚠️ Please upload your scheme documents on the left sidebar before we begin.")
+            st.warning("⚠️ Please upload your first scheme document on the left sidebar.")
         st.stop()
 
     with st.chat_message("assistant"):
-        formatted_history = "\n".join(
-            [f"{m['role'].capitalize()}: {m['content']}" for m in st.session_state.messages[:-1]]
-        )
-        available_schemes = "\n".join(f"- {name}" for name in st.session_state.scheme_list)
-
-        # --- 5. Retriever: Searches our database for the top 5 paragraphs that best match the user's question ---
-        retriever = st.session_state.doc_memory.as_retriever(search_kwargs={"k": 5})
-        retrieved_docs = retriever.invoke(prompt)
         
-        def format_docs(docs):
-            return "\n\n".join(doc.page_content for doc in docs)
+        # 1. RUN NEMO GUARDRAILS (INPUT CHECK)
+        rail_check = guardrails.generate(messages=[{"role": "user", "content": prompt}])
+        
+        if isinstance(rail_check, dict):
+            rail_output = rail_check.get("content", "")
+        elif isinstance(rail_check, list):
+            rail_output = rail_check[0].get("content", "")
+        else:
+            rail_output = str(rail_check)
             
-        doc_context = format_docs(retrieved_docs)
+        if "Out of Scope" in rail_output:
+            st.write(rail_output)
+            st.session_state.chat_memory.add_user_message(prompt)
+            st.session_state.chat_memory.add_ai_message(rail_output)
+            st.stop()
 
-        # --- SELF-RAG GRADER: Domain Guardrail & Source Routing ---
+        # 2. LOCAL VECTOR RETRIEVAL
+        available_schemes = "\n".join(f"- {name}" for name in st.session_state.scheme_list)
+        retriever = st.session_state.doc_memory.as_retriever(search_kwargs={"k": 6})
+        doc_context = "\n\n".join(doc.page_content for doc in retriever.invoke(prompt))
+
+        # 3. ROUTING GRADER (Handles full questions, scheme titles, and keywords)
         grader_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         grader_prompt = PromptTemplate.from_template(
-            """You are a smart router for a Farmer Scheme Assistant. 
-            Evaluate the user's question and choose ONE of three paths.
+            """You are a relevance grader for an agricultural scheme assistant.
+            Evaluate whether the provided Context contains information relevant to the User Query.
             
-            1. First, is the question related to agriculture, farming, crops, weather, rural development, financial aid, or any government programs/acronyms (e.g., PM-KISAN, subsidies)?
-               *Be lenient.* If the user asks about benefits, payouts, or acronyms that sound like government schemes, assume it is YES.
-               If it is completely unrelated (e.g., video games, cooking, movies), output exactly: OUT_OF_SCOPE
-               
-            2. If YES, look at the Context. Does the Context contain sufficient information to answer the question?
-               If YES, output exactly: PDF_YES
-               If NO, output exactly: WEB_SEARCH
+            The User Query might be a full question OR simply a scheme name/keyword (e.g., 'PM Kisan Maan Dhan Yojana').
             
-            Output ONLY one of those three exact phrases without any extra punctuation.
-
+            Rules:
+            1. If the Context contains facts, eligibility, benefits, descriptions, or rules related to the scheme or topic in the query, output exactly: PDF_YES
+            2. Only if the Context is completely empty, irrelevant, or fails to mention the queried topic at all, output exactly: WEB_SEARCH
+            
+            Output ONLY one of those two phrases without punctuation.
+            
             Context:
             {context}
-
-            Question: {question}
-            """
-        )
-        
-        with st.spinner("Thinking..."):
-            route = grader_llm.invoke(
-                grader_prompt.format(context=doc_context, question=prompt)
-            ).content.strip().upper()
-
-        # --- DECISION GATE ---
-        if "OUT_OF_SCOPE" in route:
-            # Domain Guardrail: Politely refuse non-farming questions
-            st.caption("🛑 Out of Scope")
-            out_of_scope_msg = "I specialize strictly in farmer schemes and agricultural topics. I'm afraid I cannot help with other subjects. Please feel free to ask me anything related to farming!"
-            st.write(out_of_scope_msg)
-            st.session_state.messages.append({"role": "assistant", "content": out_of_scope_msg})
-            st.stop()
             
-        elif "PDF_YES" in route:
-            # Found in the uploaded documents
+            User Query: {question}"""
+        )
+        route = grader_llm.invoke(grader_prompt.format(context=doc_context, question=prompt)).content.strip().upper()
+
+        if "PDF_YES" in route:
             st.caption("✅ Source: Uploaded Documents")
             final_context = doc_context
-            
         else:
-            # Farming related, but not in the documents: Search the web
             st.caption("🌐 Source: Internet Search")
-            with st.spinner("I'm checking the internet for the latest farming information..."):
+            with st.spinner("Searching the web for scheme information..."):
                 web_search = DuckDuckGoSearchResults()
-                # Appending keywords ensures DuckDuckGo focuses heavily on agricultural policy
-                web_results = web_search.invoke(f"{prompt} agriculture farmer scheme India")
-                final_context = f"Internet Search Results:\n{web_results}"
+                final_context = f"Internet Search Results:\n{web_search.invoke(f'{prompt} agriculture farmer scheme India')}"
 
-        # --- FINAL ANSWER GENERATION ---
-        template = """You are a friendly, helpful agricultural assistant talking to a farmer.
-        Use plain, simple language without technical jargon. 
-        Use the provided context (from documents or the web) and the conversation history to answer their question.
-        
-        INVENTORY OF UPLOADED SCHEMES:
-        {inventory}
+        # 4. FINAL ANSWER GENERATION (STREAMING WITH RUNNABLE MEMORY)
+        rag_prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a friendly, helpful agricultural assistant talking to a farmer.
+            Use plain, simple language without technical jargon. 
+            Use the provided context and the conversation history to answer the farmer's inquiry clearly.
+            
+            INVENTORY OF UPLOADED SCHEMES:
+            {inventory}
 
-        Conversation History:
-        {chat_history}
-
-        Context to base your answer on:
-        {context}
-
-        Question: {question}
-        Answer:"""
+            Context to base your answer on:
+            {context}"""),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{question}")
+        ])
         
-        rag_prompt = PromptTemplate.from_template(template)
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, streaming=True)
-
-        # --- LANGSMITH TRACED PIPELINE ---
-        # Because LangSmith is active in the environment, this entire LCEL chain 
-        # (the prompt formatting, LLM call, and string parsing) is automatically 
-        # logged, timed, and evaluated in the LangSmith project dashboard.
-        rag_chain = rag_prompt | llm | StrOutputParser()
+        rag_chain = rag_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0, streaming=True) | StrOutputParser()
         
-        response_stream = rag_chain.stream({
-            "context": final_context,
-            "question": prompt,
-            "chat_history": formatted_history,
-            "inventory": available_schemes
-        })
+        chain_with_history = RunnableWithMessageHistory(
+            rag_chain,
+            lambda session_id: st.session_state.chat_memory,
+            input_messages_key="question",
+            history_messages_key="chat_history",
+        )
         
-        # Stream the friendly response to the UI
-        full_response = st.write_stream(response_stream)
+        response_stream = chain_with_history.stream(
+            {
+                "context": final_context,
+                "question": prompt,
+                "inventory": available_schemes
+            },
+            config={"configurable": {"session_id": "farmer_session"}}
+        )
         
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+        st.write_stream(response_stream)
