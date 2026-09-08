@@ -2,63 +2,28 @@
 
 > An AI-powered RAG application that helps farmers understand Indian government agricultural schemes using uploaded PDF documents, semantic search, web search, conversation memory, and AI safety guardrails.
 
+Farmer Scheme Assist is a **Retrieval-Augmented Generation (RAG)** application built with **LangChain, Streamlit, FAISS, Hugging Face Embeddings, OpenAI, DuckDuckGo Search, and NeMo Guardrails**.
+
+The application allows users to upload government agricultural scheme documents and ask questions in natural language. It first checks whether the question is within the application's scope, searches the uploaded documents for relevant information, and automatically falls back to an internet search when the uploaded documents do not contain the required answer.
+
+---
+
 ## 🚀 Features
 
-- 📄 Upload multiple agricultural scheme PDF documents
-- 🔍 Extract and split PDF content using LangChain
-- 🧠 Generate embeddings using Hugging Face
-- 🗂️ Store and search document embeddings using FAISS
-- 🤖 Generate answers using OpenAI
-- 🌐 Automatically search the web when information is not available in uploaded documents
-- 🛡️ Agriculture-domain guardrail to reject unrelated questions
-- 💬 Chat history / conversation memory
+- 📄 Upload and process multiple PDF scheme documents
+- 🔎 Semantic document search using FAISS
+- 🧠 Hugging Face sentence embeddings
+- 🤖 OpenAI-powered answer generation
+- 🌐 Automatic web search fallback using DuckDuckGo
+- 🛡️ NeMo Guardrails for out-of-scope question handling
+- 💬 Conversation memory for contextual follow-up questions
+- 💾 Persistent FAISS vector database
+- 📋 Maintains a list of previously processed schemes
 - ⚡ Streaming AI responses
-- 📊 LangSmith integration for tracing and monitoring the RAG workflow
-- 🖥️ Simple Streamlit user interface
+- 🖥️ Interactive Streamlit interface
+- 📊 LangSmith-compatible LangChain workflow tracing
 
-## 🏗️ Architecture
-
-```text
-                     ┌──────────────────────┐
-                     │   Streamlit Chat UI  │
-                     └──────────┬───────────┘
-                                │
-                                ▼
-                     ┌──────────────────────┐
-                     │  User Question       │
-                     └──────────┬───────────┘
-                                │
-                                ▼
-                     ┌──────────────────────┐
-                     │  Document Retriever  │
-                     │      FAISS           │
-                     └──────────┬───────────┘
-                                │
-                                ▼
-                     ┌──────────────────────┐
-                     │   Self-RAG Grader    │
-                     │  Domain + Routing    │
-                     └───────┬───────┬──────┘
-                             │       │
-                    PDF found│       │Not found
-                             │       │
-                             ▼       ▼
-                       ┌────────┐ ┌─────────────┐
-                       │  PDF   │ │ Web Search  │
-                       │Context │ │ DuckDuckGo  │
-                       └────┬───┘ └──────┬──────┘
-                            │             │
-                            └──────┬──────┘
-                                   ▼
-                         ┌──────────────────┐
-                         │   OpenAI LLM     │
-                         └────────┬─────────┘
-                                  │
-                                  ▼
-                         ┌──────────────────┐
-                         │  Final Response  │
-                         └──────────────────┘
-```
+---
 
 ## 🛠️ Technologies Used
 
@@ -69,124 +34,423 @@
 - LangChain OpenAI
 - LangChain Hugging Face
 - FAISS
-- Hugging Face Sentence Transformers
+- Hugging Face Embeddings
 - OpenAI
 - DuckDuckGo Search
-- PyPDF
+- NeMo Guardrails
 - LangSmith
+- PyPDF
 
-## 📁 Project Structure
+---
+
+## 🧠 How the Application Works
+
+The application follows this workflow:
 
 ```text
-farmer-scheme-assist/
-│
-├── app.py
-├── requirements.txt
-├── .env
-├── .gitignore
-└── README.md
+                 ┌─────────────────────┐
+                 │   User asks a       │
+                 │      question       │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │  NeMo Guardrails    │
+                 │   Scope Checking    │
+                 └──────────┬──────────┘
+                            │
+                    ┌───────┴────────┐
+                    │                │
+                 Out of Scope       Valid
+                    │                │
+                    ▼                ▼
+                 Block        FAISS Retrieval
+                                     │
+                                     ▼
+                            ┌─────────────────┐
+                            │ Routing Grader  │
+                            │ PDF or Web?     │
+                            └────────┬────────┘
+                                     │
+                           ┌─────────┴─────────┐
+                           │                   │
+                        PDF_YES             WEB_SEARCH
+                           │                   │
+                           ▼                   ▼
+                    Uploaded PDFs       DuckDuckGo Search
+                           │                   │
+                           └─────────┬─────────┘
+                                     │
+                                     ▼
+                              Context + Memory
+                                     │
+                                     ▼
+                              OpenAI LLM
+                                     │
+                                     ▼
+                              Final Response
 ```
 
-## ⚙️ Setup & Installation
+---
 
-### 1. Clone the Repository
+## 📄 Document Processing
+
+Users can upload one or more PDF files from the Streamlit sidebar.
+
+Each PDF is:
+
+1. Temporarily saved to disk.
+2. Loaded using `PyPDFLoader`.
+3. Split into smaller chunks.
+4. Converted into embeddings.
+5. Added to the FAISS vector database.
+6. Persisted locally for future application runs.
+
+The application uses:
+
+```text
+Chunk Size    : 1000
+Chunk Overlap : 200
+```
+
+This allows the application to retrieve relevant sections of large government scheme documents efficiently.
+
+---
+
+## 🔎 Semantic Search with FAISS
+
+The application uses the Hugging Face embedding model:
+
+```text
+all-MiniLM-L6-v2
+```
+
+The generated embeddings are stored in a **FAISS vector database**.
+
+When the user asks a question, the application retrieves the top 5 relevant document chunks:
+
+```python
+retriever = st.session_state.doc_memory.as_retriever(
+    search_kwargs={"k": 5}
+)
+```
+
+The retrieved content is then provided to the LLM as context.
+
+---
+
+## 🧭 Intelligent PDF / Web Routing
+
+The application does not always perform an internet search.
+
+A routing grader first checks whether the uploaded PDF documents contain enough information to answer the question.
+
+The grader returns either:
+
+```text
+PDF_YES
+```
+
+or:
+
+```text
+WEB_SEARCH
+```
+
+### PDF_YES
+
+If the uploaded documents contain the required information, the application uses the retrieved PDF content.
+
+The UI displays:
+
+```text
+✅ Source: Uploaded Documents
+```
+
+### WEB_SEARCH
+
+If the uploaded documents do not contain enough information, the application performs an internet search using DuckDuckGo.
+
+The UI displays:
+
+```text
+🌐 Source: Internet Search
+```
+
+This creates a hybrid **RAG + Web Search** architecture.
+
+---
+
+## 🌐 Web Search
+
+For questions that cannot be answered from the uploaded documents, the application uses:
+
+```python
+DuckDuckGoSearchResults()
+```
+
+The search query is enhanced with:
+
+```text
+agriculture farmer scheme India
+```
+
+This helps focus web search results on Indian agricultural schemes and farmer-related information.
+
+---
+
+## 🛡️ NeMo Guardrails
+
+The application uses **NeMo Guardrails** to control the type of questions users can ask.
+
+The guardrails configuration is loaded from:
+
+```text
+./config
+```
+
+The application initializes the guardrails using:
+
+```python
+config = RailsConfig.from_path("./config")
+guardrails = LLMRails(config)
+```
+
+Before the RAG workflow runs, the user's question is checked by the guardrails.
+
+If the question is classified as out of scope, the application returns the guardrail response and does not continue to document retrieval or web search.
+
+This provides an additional safety and scope-control layer.
+
+---
+
+## 💬 Conversation Memory
+
+The application maintains conversation history using:
+
+```python
+InMemoryChatMessageHistory
+```
+
+This allows the chatbot to understand follow-up questions based on previous messages.
+
+For example:
+
+```text
+User:
+What is PM-KISAN?
+
+Assistant:
+PM-KISAN is...
+
+User:
+Who is eligible?
+
+Assistant:
+Farmers meeting the eligibility requirements...
+```
+
+The previous conversation is passed to the LLM through:
+
+```python
+MessagesPlaceholder(variable_name="chat_history")
+```
+
+The application also provides a **Clear Chat History** button in the sidebar.
+
+---
+
+## 💾 Persistent Vector Database
+
+The FAISS database is saved locally in:
+
+```text
+faiss_index/
+```
+
+The application automatically loads the existing database when it starts.
+
+The scheme names are stored separately in:
+
+```text
+faiss_index/schemes.json
+```
+
+This means previously processed documents do not need to be uploaded and processed again every time the application starts.
+
+---
+
+## ⚡ Streaming Responses
+
+The application uses streaming for the final OpenAI response:
+
+```python
+ChatOpenAI(
+    model="gpt-4o-mini",
+    temperature=0,
+    streaming=True
+)
+```
+
+The response is displayed progressively using Streamlit's:
+
+```python
+st.write_stream()
+```
+
+This provides a more interactive chatbot experience.
+
+---
+
+## 🔐 Environment Variables
+
+Create a `.env` file in the project root.
+
+Example:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+LANGCHAIN_API_KEY=your_langsmith_api_key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=farmer-scheme-assist
+```
+
+Do not commit your `.env` file to GitHub.
+
+Your `.gitignore` should contain:
+
+```gitignore
+# Environment variables
+.env
+
+# Data files
+*.pdf
+data/
+
+# Python / Virtual Environment
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Streamlit config
+.streamlit/
+
+# OS / Editor Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+```
+
+---
+
+## 📦 Installation
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/your-username/farmer-scheme-assist.git
 cd farmer-scheme-assist
 ```
 
-### 2. Create a Virtual Environment
+### 2. Create a virtual environment
 
 ```bash
 python -m venv venv
 ```
 
-Activate the virtual environment.
+### 3. Activate the virtual environment
 
-**Windows:**
+### Windows
 
 ```bash
 venv\Scripts\activate
 ```
 
-**macOS / Linux:**
+### macOS / Linux
 
 ```bash
 source venv/bin/activate
 ```
 
-### 3. Install Dependencies
+---
 
-Install the dependencies from `requirements.txt`:
+## 📥 Install Dependencies
+
+Install the required Python packages:
+
+```bash
+pip install streamlit
+pip install python-dotenv
+pip install langchain
+pip install langchain-community
+pip install langchain-openai
+pip install langchain-huggingface
+pip install langchain-text-splitters
+pip install faiss-cpu
+pip install sentence-transformers
+pip install pypdf
+pip install ddgs
+pip install nemoguardrails
+```
+
+You can also create a `requirements.txt` file and install everything with:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-If you don't have a `requirements.txt` file yet:
-
-```bash
-pip install streamlit python-dotenv langchain langchain-community langchain-openai langchain-huggingface langchain-text-splitters faiss-cpu pypdf sentence-transformers ddgs
-```
-
-### 4. Configure Environment Variables
-
-Create a `.env` file in the project root:
-
-```env
-OPENAI_API_KEY=your_openai_api_key
-
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=your_langsmith_api_key
-LANGCHAIN_PROJECT=farmer-scheme-assist
-```
-
-> ⚠️ Never commit your `.env` file or API keys to GitHub.
-
-Add the following to `.gitignore`:
-
-```gitignore
-.env
-venv/
-__pycache__/
-```
+---
 
 ## ▶️ Run the Application
 
-Start the Streamlit application:
+Start the Streamlit application with:
 
 ```bash
 streamlit run app.py
 ```
 
-Open the application in your browser:
+After starting the application, Streamlit will provide a local URL similar to:
 
 ```text
 http://localhost:8501
 ```
 
-## 📄 How to Use
+Open the URL in your browser.
 
-### Step 1 — Upload Documents
+---
 
-Use the **Upload Scheme Documents** section in the sidebar to upload one or more government agricultural scheme PDFs.
+## 📄 Upload Scheme Documents
 
-### Step 2 — Read Documents
+When the application starts for the first time, the sidebar will show:
 
-Click **Read Documents**.
+```text
+No database found. Please upload a PDF to begin.
+```
 
-The application will:
+To add documents:
 
-1. Load the PDF documents using `PyPDFLoader`
-2. Split the documents into smaller chunks
-3. Generate embeddings using `all-MiniLM-L6-v2`
-4. Store the embeddings in a FAISS vector database
-5. Prepare the documents for semantic search
+1. Open the sidebar.
+2. Select **Add new PDF files**.
+3. Upload one or more government scheme PDFs.
+4. Click **Process & Add Documents**.
+5. Wait for document processing to finish.
+6. The FAISS database will be created automatically.
 
-### Step 3 — Ask Questions
+After processing, the application displays:
 
-Ask questions such as:
+```text
+✅ Database loaded and ready!
+```
+
+---
+
+## 💡 Example Questions
+
+You can ask questions such as:
 
 ```text
 What are the benefits of PM-KISAN?
@@ -197,134 +461,162 @@ Who is eligible for this scheme?
 ```
 
 ```text
+What documents are required to apply?
+```
+
+```text
 How much financial assistance is provided?
 ```
 
-### Step 4 — Intelligent Source Selection
-
-The application uses a Self-RAG style routing process.
-
-It checks whether:
-
-- The question is related to agriculture or farmer schemes.
-- The uploaded documents contain enough information to answer the question.
-
-The application then selects one of three routes:
-
 ```text
-PDF_YES
-    ↓
-Answer using uploaded documents
-
-WEB_SEARCH
-    ↓
-Search the internet for additional information
-
-OUT_OF_SCOPE
-    ↓
-Reject unrelated questions
+How can a farmer apply for the scheme?
 ```
 
-## 🧠 RAG Workflow
+```text
+What is the official eligibility criteria?
+```
 
-The application follows a Retrieval-Augmented Generation workflow:
+If the answer is not available in the uploaded documents, the application automatically performs a web search.
+
+---
+
+## 🏗️ RAG Pipeline
+
+The application's RAG pipeline consists of the following stages:
+
+### 1. Document Loading
 
 ```text
-PDF Documents
-      ↓
-PDF Loader
-      ↓
-Text Splitting
-      ↓
+PDF
+ ↓
+PyPDFLoader
+```
+
+### 2. Text Splitting
+
+```text
+Document
+ ↓
+RecursiveCharacterTextSplitter
+ ↓
+Chunks
+```
+
+### 3. Embeddings
+
+```text
+Text Chunks
+ ↓
 Hugging Face Embeddings
-      ↓
-FAISS Vector Store
-      ↓
-Semantic Retrieval
-      ↓
-Relevant Context
-      ↓
-OpenAI LLM
-      ↓
-Final Answer
+ ↓
+Vectors
 ```
 
-Instead of asking the LLM to answer only from its existing knowledge, the application retrieves relevant information from the uploaded documents and provides that information as context to the model.
+### 4. Vector Storage
 
-## 🌐 Web Search Fallback
+```text
+Vectors
+ ↓
+FAISS
+ ↓
+faiss_index/
+```
 
-If the uploaded documents do not contain enough information to answer a farming-related question, the application automatically uses DuckDuckGo web search.
+### 5. Retrieval
 
 ```text
 User Question
-      ↓
-Check Uploaded Documents
-      ↓
-Information Available?
-   ↙          ↘
- YES           NO
-  ↓             ↓
-PDF Context   Web Search
-  ↓             ↓
-  └──────┬──────┘
-         ↓
-      OpenAI
-         ↓
-   Final Answer
+ ↓
+FAISS Similarity Search
+ ↓
+Top 5 Relevant Chunks
 ```
 
-This allows the application to provide more current information when it is not available in the uploaded scheme documents.
-
-## 🛡️ Domain Guardrail
-
-The application includes an AI-powered domain guardrail.
-
-Agriculture-related questions are allowed, including:
-
-- Farmer schemes
-- Government subsidies
-- Crops
-- Farming
-- Agriculture
-- Rural development
-- Financial assistance
-- Government programs
-
-Unrelated questions are rejected.
-
-Example:
+### 6. Routing
 
 ```text
-User:
-What are the benefits of PM-KISAN?
-
-Assistant:
-Answers the question.
+Retrieved Context
+ ↓
+OpenAI Grader
+ ↓
+PDF_YES / WEB_SEARCH
 ```
+
+### 7. Generation
 
 ```text
-User:
-Who won the latest football match?
-
-Assistant:
-I specialize strictly in farmer schemes and agricultural topics.
+Context
++
+Conversation History
++
+User Question
+ ↓
+OpenAI
+ ↓
+Final Answer
 ```
 
-## 📊 LangSmith Integration
+---
 
-The application is integrated with LangSmith for monitoring and tracing the LangChain workflow.
+## 🧩 Main Components
 
-LangSmith can be used to inspect:
+### Streamlit
 
-- RAG chain execution
-- Prompt execution
-- LLM calls
-- Response generation
-- Execution time
-- Errors
-- Trace information
+Provides the interactive web interface, sidebar, file upload, chat interface, status messages, and streaming output.
 
-Enable LangSmith using:
+### PyPDFLoader
+
+Loads text content from uploaded PDF documents.
+
+### RecursiveCharacterTextSplitter
+
+Splits large documents into smaller overlapping chunks suitable for embedding and retrieval.
+
+### Hugging Face Embeddings
+
+Uses:
+
+```text
+all-MiniLM-L6-v2
+```
+
+to convert text into numerical vector representations.
+
+### FAISS
+
+Stores and searches document embeddings efficiently.
+
+### OpenAI
+
+Used for:
+
+- Routing/grading
+- Final answer generation
+- Context-aware responses
+
+### DuckDuckGo
+
+Provides web search when the uploaded documents do not contain the required answer.
+
+### NeMo Guardrails
+
+Checks user questions before the RAG workflow and prevents out-of-scope requests.
+
+### LangChain Memory
+
+Maintains conversation history so the chatbot can answer follow-up questions.
+
+### LangSmith
+
+Can be used to trace and monitor the LangChain workflow, including LLM calls and retrieval-related execution.
+
+---
+
+## 📊 LangSmith
+
+The application can be integrated with LangSmith for observing and debugging the LangChain workflow.
+
+Set the following variables in `.env`:
 
 ```env
 LANGCHAIN_TRACING_V2=true
@@ -332,79 +624,186 @@ LANGCHAIN_API_KEY=your_langsmith_api_key
 LANGCHAIN_PROJECT=farmer-scheme-assist
 ```
 
-After running the application and asking questions, the LangChain traces will be available in the configured LangSmith project.
+LangSmith can help monitor:
 
-## 📦 Requirements
+- LLM calls
+- Prompt execution
+- Retrieval workflow
+- Web search execution
+- Chain execution
+- Response generation
+- Errors and latency
 
-Recommended Python version:
+This is useful for debugging and improving the RAG pipeline.
+
+---
+
+## 🗂️ Generated Files
+
+When documents are processed, the application creates:
 
 ```text
-Python 3.11+
+faiss_index/
 ```
 
-Main dependencies:
+and:
 
 ```text
-streamlit
-python-dotenv
-langchain
-langchain-community
-langchain-openai
-langchain-huggingface
-langchain-text-splitters
-faiss-cpu
-pypdf
-sentence-transformers
-ddgs
+faiss_index/schemes.json
 ```
 
-## 🔐 Environment Variables
+The FAISS directory contains the locally persisted vector database.
 
-| Variable               | Description                           |
-| ---------------------- | ------------------------------------- |
-| `OPENAI_API_KEY`       | OpenAI API key used for LLM responses |
-| `LANGCHAIN_TRACING_V2` | Enables LangSmith tracing             |
-| `LANGCHAIN_API_KEY`    | LangSmith API key                     |
-| `LANGCHAIN_PROJECT`    | LangSmith project name                |
+`schemes.json` stores the names of uploaded scheme documents.
 
-## 🎯 Example Questions
+These generated files can be excluded from GitHub if you prefer to keep uploaded document data local.
 
-Try asking:
+---
 
-- What is PM-KISAN?
-- What are the benefits of PM-KISAN?
-- Who is eligible for the scheme?
-- How much financial assistance is provided?
-- What documents are required?
-- How can farmers apply?
-- What government schemes are available for farmers?
-- What subsidies are available for agriculture?
+## 🔄 Adding More Documents
+
+The application supports adding new PDFs after the initial database has been created.
+
+For example:
+
+```text
+Initial upload
+    ↓
+PM-KISAN.pdf
+    ↓
+FAISS database created
+
+Later upload
+    ↓
+PMFBY.pdf
+PM-KUSUM.pdf
+    ↓
+Documents added to existing FAISS database
+```
+
+Existing documents remain available for retrieval.
+
+---
+
+## 🧹 Clear Chat History
+
+The sidebar contains:
+
+```text
+Clear Chat History
+```
+
+Clicking this button removes the current conversation history while keeping the document database intact.
+
+---
+
+## 🔒 Security Notes
+
+Never commit API keys or secrets to GitHub.
+
+Keep sensitive values inside `.env`:
+
+```env
+OPENAI_API_KEY=...
+LANGCHAIN_API_KEY=...
+```
+
+Make sure `.env` is included in `.gitignore`.
+
+Uploaded PDF files can also be excluded from GitHub using:
+
+```gitignore
+*.pdf
+data/
+```
+
+---
 
 ## ⚠️ Important Notes
 
-- Uploaded documents are processed during the current Streamlit session.
-- The FAISS vector store is maintained in Streamlit session state.
-- The Hugging Face embedding model may be downloaded the first time it is used.
-- Web search requires an active internet connection.
-- OpenAI API usage may incur costs.
-- LangSmith tracing is optional but recommended for monitoring the application.
-- Always verify important government-scheme information using official government sources before making financial or eligibility decisions.
+The application uses AI-generated responses. Users should verify important information such as:
 
-## 🚀 Future Enhancements
+- Eligibility requirements
+- Financial assistance amounts
+- Application deadlines
+- Required documents
+- Government rules
+- Official application procedures
 
-- 📌 Persistent vector database
-- 🗣️ Multilingual support for Indian languages
-- 🎙️ Voice-based farmer assistance
-- 📚 More government scheme datasets
+For official information, users should verify details with the relevant Government of India department or official government portal.
+
+---
+
+## 🎯 Project Objective
+
+The main objective of Farmer Scheme Assist is to demonstrate how modern Generative AI technologies can be combined to build a practical agricultural information assistant.
+
+The project demonstrates:
+
+```text
+Generative AI
+      +
+RAG
+      +
+Vector Database
+      +
+Semantic Search
+      +
+Web Search
+      +
+Conversation Memory
+      +
+AI Guardrails
+      +
+LangChain
+      +
+LangSmith
+      +
+Streamlit
+```
+
+This makes the application a practical example of a **production-oriented RAG architecture with safety controls and hybrid information retrieval**.
+
+---
+
+## 🚀 Future Improvements
+
+Possible future enhancements include:
+
+- 🔐 User authentication
 - 👨‍🌾 Personalized scheme recommendations
-- ☁️ Cloud deployment
+- 🌐 Multilingual support including Tamil and Hindi
+- 🎙️ Voice-based questions
+- 📱 Mobile-friendly interface
+- 🏛️ Integration with official government APIs
+- 📚 Automatic government scheme document updates
+- 🗃️ Metadata-based filtering
+- 📊 Analytics dashboard
+- 🧠 Improved query routing
+- 🔍 Source citations for retrieved information
+- ☁️ Cloud-based vector database
+- 🚀 Deployment using Streamlit Cloud or other cloud platforms
+
+---
+
+## 📜 License
+
+This project is created for educational and demonstration purposes.
+
+You may modify and extend the project according to your requirements.
+
+---
 
 ## 👨‍💻 Author
 
 **Shafrith**
 
-Built as a Generative AI / RAG learning project using LangChain, Streamlit, FAISS, Hugging Face, OpenAI, and LangSmith.
+Built as a Generative AI / RAG learning project using:
+
+**Python • LangChain • Streamlit • FAISS • Hugging Face • OpenAI • NeMo Guardrails • DuckDuckGo • LangSmith**
 
 ---
 
-⭐ If you find this project useful, consider giving the repository a star!
+## ⭐ If You Like This Project
+
+If you find this project useful, consider giving the repository a ⭐ on GitHub.
